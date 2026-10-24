@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f3f1e9">
+    <title>LSM Tree Visualizer</title>
+    <link rel="stylesheet" href="./css/styles.css">
+    <script type="module" src="./js/app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#top" aria-label="LSM Tree Visualizer home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>FIELDNOTES <b>/ DBMS</b></span>
+        </a>
+        <div class="topbar-right">
+          <span class="session-label"><span class="live-dot"></span> LOCAL SESSION</span>
+          <span class="build-tag">LSM / 01</span>
+          <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Enable dark theme" title="Toggle color theme"><span aria-hidden="true">◐</span></button>
+        </div>
+      </header>
+
+      <main id="top">
+        <section class="page-heading" aria-labelledby="page-title">
+          <div>
+            <p class="eyebrow">STORAGE SYSTEMS LAB <span>·</span> INTERACTIVE MODEL</p>
+            <h1 id="page-title">LSM <em>Tree</em></h1>
+            <p class="heading-copy">Follow a write from its log entry to sorted runs, then watch reads and compaction resolve the latest version.</p>
+          </div>
+          <div class="heading-controls">
+            <div class="strategy-control" role="group" aria-label="Compaction strategy">
+              <span class="control-label">COMPACTION</span>
+              <div class="segmented" id="strategy-control">
+                <button type="button" data-strategy="leveled" aria-pressed="true">Leveled</button>
+                <button type="button" data-strategy="size-tiered" aria-pressed="false">Size-tiered</button>
+              </div>
+            </div>
+            <button id="random-batch" class="button button-secondary random-button" type="button"><span aria-hidden="true">✳</span> Insert 20 random keys</button>
+          </div>
+        </section>
+
+        <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+        <div class="workspace-grid">
+          <aside class="control-rail" aria-label="Database operations">
+            <section class="rail-section">
+              <div class="section-kicker"><span>01</span> WRITE PATH</div>
+              <form id="write-form" class="operation-form">
+                <label for="write-key">Key</label>
+                <input id="write-key" name="key" maxlength="40" placeholder="e.g. user:42" autocomplete="off" required>
+                <label for="write-value">Value</label>
+                <input id="write-value" name="value" maxlength="80" placeholder="a value to store" autocomplete="off" required>
+                <button class="button button-primary" type="submit">Put</button>
+              </form>
+              <form id="delete-form" class="inline-form">
+                <label class="sr-only" for="delete-key">Key to delete</label>
+                <input id="delete-key" name="key" maxlength="40" placeholder="Key to delete" autocomplete="off" required>
+                <button class="button button-quiet" type="submit">Delete</button>
+              </form>
+            </section>
+
+            <section class="rail-section">
+              <div class="section-kicker"><span>02</span> READ PATH</div>
+              <form id="get-form" class="inline-form">
+                <label class="sr-only" for="get-key">Key to get</label>
+                <input id="get-key" name="key" maxlength="40" placeholder="Find a key" autocomplete="off" required>
+                <button class="icon-button" type="submit" aria-label="Get key">Get</button>
+              </form>
+              <form id="scan-form" class="scan-form">
+                <div class="field-pair">
+                  <div><label for="scan-start">From</label><input id="scan-start" name="startKey" placeholder="a" required></div>
+                  <div><label for="scan-end">Through</label><input id="scan-end" name="endKey" placeholder="z" required></div>
+                </div>
+                <button class="text-button" type="submit">Run inclusive range <span aria-hidden="true">→</span></button>
+              </form>
+              <div id="query-result" class="query-result" aria-live="polite">
+                <span class="result-label">QUERY RESULT</span>
+                <p>Read or scan to inspect resolved records.</p>
+              </div>
+            </section>
+
+            <section class="rail-section control-actions">
+              <div class="section-kicker"><span>03</span> MAINTENANCE</div>
+              <button class="button button-secondary" type="button" data-action="flush">Flush MemTable</button>
+              <button class="button button-secondary" type="button" data-action="compact">Compact eligible files</button>
+              <button class="button button-danger" type="button" data-action="crash-recover">Simulate crash + recover</button>
+              <p class="rail-note">Capacity: 4 distinct keys. Storage is simulated in browser memory only.</p>
+            </section>
+          </aside>
+
+          <section class="visual-stage" aria-label="LSM tree state">
+            <div id="status-strip" class="status-strip"></div>
+            <section class="memory-zone" aria-labelledby="memory-title">
+              <div class="zone-heading">
+                <div><span class="section-kicker"><span>VOLATILE</span> WRITE BUFFER</span><h2 id="memory-title">MemTable</h2></div>
+                <span id="memtable-count" class="count-label">0 / 4 KEYS</span>
+              </div>
+              <div id="memtable-view" class="memtable-view"></div>
+            </section>
+            <section class="levels-zone" aria-labelledby="levels-title">
+              <div class="zone-heading levels-heading">
+                <div><span class="section-kicker"><span>DURABLE</span> SORTED RUNS</span><h2 id="levels-title">Storage levels</h2></div>
+                <span class="small-note">OLDER <span aria-hidden="true">↓</span> DEEPER</span>
+              </div>
+              <div id="levels-view" class="levels-view"></div>
+            </section>
+            <section id="table-inspector" class="table-inspector" aria-live="polite"></section>
+          </section>
+        </div>
+
+        <section class="telemetry-grid" aria-label="Storage metadata">
+          <section class="telemetry-panel wal-panel">
+            <div class="panel-heading"><div><span class="section-kicker">APPEND ONLY</span><h2>Write-ahead log</h2></div><span id="wal-count" class="count-label">0 RECORDS</span></div>
+            <div id="wal-view" class="wal-view"></div>
+          </section>
+          <section class="telemetry-panel manifest-panel">
+            <div class="panel-heading"><div><span class="section-kicker">ATOMIC VIEW</span><h2>Manifest</h2></div><span id="manifest-version" class="count-label">V0</span></div>
+            <div id="manifest-view" class="manifest-view"></div>
+          </section>
+        </section>
+
+        <section class="timeline" aria-label="Event history playback">
+          <div class="timeline-title"><span class="section-kicker">EVENT TRACE</span><strong id="event-title">Ready</strong><span id="event-count" class="timeline-count">0 / 0</span></div>
+          <p id="event-caption" class="event-caption">Ready for an operation.</p>
+          <div class="timeline-controls">
+            <button id="step-back" class="transport-button" type="button" aria-label="Previous event" title="Previous event">←</button>
+            <button id="play-button" class="transport-button transport-play" type="button" aria-label="Play event history" title="Play event history">▶</button>
+            <button id="step-forward" class="transport-button" type="button" aria-label="Next event" title="Next event">→</button>
+            <button id="reset-button" class="transport-button reset-button" type="button" aria-label="Reset simulation" title="Reset simulation">↺</button>
+            <label class="sr-only" for="history-range">Select history event</label>
+            <input id="history-range" type="range" min="0" max="0" value="0">
+          </div>
+          <div class="speed-control"><label for="speed-range">PLAYBACK SPEED</label><input id="speed-range" type="range" min="150" max="1500" step="50" value="650"><span id="speed-value">650 ms</span></div>
+          <div id="event-ticks" class="event-ticks" aria-label="Recent events"></div>
+          <div id="event-log" class="event-log" aria-label="Chronological event log"></div>
+        </section>
+
+        <section class="statistics" aria-label="Simulation statistics">
+          <div class="statistics-heading"><span class="section-kicker">RUN STATISTICS</span><span id="statistics-mode" class="count-label">CURRENT SNAPSHOT</span></div>
+          <div id="statistics-view" class="statistics-view"></div>
+          <div class="amplification-heading"><span class="section-kicker">AMPLIFICATION ESTIMATES</span><span class="estimate-tag">EDUCATIONAL · RECORD-COUNT ESTIMATES</span></div>
+          <div id="amplification-view" class="amplification-view"></div>
+          <p class="formula-note"><strong>Write:</strong> physical SSTable records written ÷ logical PUT/DELETE operations. <strong>Read:</strong> SSTable filter/table probes ÷ GET operations. <strong>Space:</strong> retained SSTable records, including obsolete files, ÷ distinct live keys represented in live SSTables; MemTable-only keys are excluded. These are educational record-count estimates. Zero denominators display as n/a or ∞.</p>
+        </section>
+
+        <section class="self-test-panel" aria-labelledby="self-test-title">
+          <div class="self-test-heading"><div><span class="section-kicker">ISOLATED ENGINE CHECKS</span><h2 id="self-test-title">Run self-tests</h2></div><button id="run-self-tests" class="button button-secondary" type="button">Run 18 tests</button></div>
+          <p class="self-test-note">Tests construct separate engines and do not change this demonstration.</p>
+          <div id="self-test-summary" class="self-test-summary" role="status" aria-live="polite">Tests have not run yet.</div>
+          <ol id="self-test-results" class="self-test-results"></ol>
+        </section>
+      </main>
+
+      <footer class="footer"><span>DBMS COURSE PROJECT</span><span>SIMULATED STORAGE · NO DATA LEAVES THIS PAGE</span></footer>
+    </div>
+  </body>
+</html>
