@@ -431,12 +431,18 @@ elements.speed.addEventListener("input", () => {
 });
 elements.theme.addEventListener("click", () => {
   const isDark = document.body.classList.toggle("dark-theme");
+  window.localStorage.setItem("lsm-tree-theme", isDark ? "dark" : "light");
   elements.theme.setAttribute("aria-label", isDark ? "Enable light theme" : "Enable dark theme");
   document.querySelector('meta[name="theme-color"]').content = isDark ? "#202a25" : "#f3f1e9";
 });
 
 stepper.subscribe((current) => render(current));
 render();
+if (window.localStorage.getItem("lsm-tree-theme") === "dark") {
+  document.body.classList.add("dark-theme");
+  elements.theme.setAttribute("aria-label", "Enable light theme");
+  document.querySelector('meta[name="theme-color"]').content = "#202a25";
+}
 createTutorial({
   execute: (action) => stepper.execute(action),
   reset: () => {

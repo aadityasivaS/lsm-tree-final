@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f3f1e9">
+    <title>LSM Tree Theory · Fieldnotes</title>
+    <link rel="stylesheet" href="./css/styles.css">
+    <script type="module" src="./js/site-theme.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="./index.html" aria-label="LSM Tree Visualizer home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>FIELDNOTES <b>/ DBMS</b></span>
+        </a>
+        <nav class="page-nav" aria-label="Supporting pages">
+          <a class="page-link active" href="./theory.html" aria-current="page">Theory</a>
+          <a class="page-link" href="./credits.html">Credits</a>
+          <a class="page-link" href="./index.html">Visualizer</a>
+          <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Enable dark theme" title="Toggle color theme"><span aria-hidden="true">◐</span></button>
+        </nav>
+      </header>
+
+      <main class="content-page">
+        <section class="page-heading content-heading" aria-labelledby="page-title">
+          <div>
+            <p class="eyebrow">STORAGE SYSTEMS LAB <span>·</span> THEORY NOTES</p>
+            <h1 id="page-title">How LSM <em>Trees</em> work</h1>
+            <p class="heading-copy">A compact guide to the write path, read path, compaction, and the trade-offs that make log-structured merge trees useful for write-heavy storage.</p>
+          </div>
+        </section>
+
+        <div class="theory-layout">
+          <aside class="theory-index" aria-label="Theory contents">
+            <p class="section-kicker">ON THIS PAGE</p>
+            <a href="#overview">01 · The core idea</a>
+            <a href="#write-path">02 · Write path</a>
+            <a href="#read-path">03 · Read path</a>
+            <a href="#compaction">04 · Compaction</a>
+            <a href="#tradeoffs">05 · Trade-offs</a>
+          </aside>
+
+          <article class="theory-article">
+            <section id="overview" class="theory-section">
+              <p class="section-kicker"><span>01</span> THE CORE IDEA</p>
+              <h2>Turn random writes into sequential work</h2>
+              <p>An LSM tree is a storage structure that accepts updates in memory and periodically writes sorted, immutable files to disk. Instead of modifying a disk-resident tree in place for every operation, it batches changes and merges them later. The design was introduced as a way to make write-heavy workloads efficient on secondary storage.</p>
+              <p>The name describes its shape: a small mutable component sits above a sequence of increasingly large, sorted levels. Each level contains <strong>SSTables</strong>—immutable sorted-string tables whose keys and values can be indexed and filtered.</p>
+              <p class="theory-callout"><strong>In this visualizer:</strong> the status strip, MemTable, levels, WAL, Manifest, and event trace expose the same stages described below.</p>
+            </section>
+
+            <section id="write-path" class="theory-section">
+              <p class="section-kicker"><span>02</span> WRITE PATH</p>
+              <h2>WAL → MemTable → SSTable</h2>
+              <div class="theory-steps">
+                <div><strong>1 · Write-ahead log</strong><p>The update is appended to a durable log before the in-memory structure acknowledges it. If the process crashes, the log can be replayed to recover acknowledged writes.</p></div>
+                <div><strong>2 · MemTable</strong><p>The update enters an ordered in-memory table. Keeping recent writes in memory makes point updates cheap and allows many operations to be sorted together.</p></div>
+                <div><strong>3 · Flush</strong><p>When the MemTable reaches its capacity, it is frozen and written as a new immutable L0 SSTable. A checkpoint and Manifest update describe the durable view.</p></div>
+              </div>
+              <p>This batching strategy reduces random disk writes, but it creates multiple versions of a key across memory and files. Reads and compaction must therefore reconcile versions using sequence numbers or timestamps.</p>
+            </section>
+
+            <section id="read-path" class="theory-section">
+              <p class="section-kicker"><span>03</span> READ PATH</p>
+              <h2>Search recent data first, then narrow the files</h2>
+              <p>A point lookup usually checks the newest data first, then examines SSTables from newer to older levels. The first visible record with the greatest sequence number wins; a tombstone means the key is logically deleted even if older copies remain physically present.</p>
+              <div class="theory-columns">
+                <div><h3>Indexes</h3><p>An SSTable index maps key ranges or separator keys to blocks, allowing a reader to seek near the requested key instead of scanning the entire file.</p></div>
+                <div><h3>Bloom filters</h3><p>A Bloom filter can quickly say that a key is definitely absent from a table. A positive result is only a possibility, so the table still verifies the key.</p></div>
+                <div><h3>Range scans</h3><p>Sorted runs make inclusive key ranges efficient: each file can seek to the start key and stream records in order while merging results from several sources.</p></div>
+              </div>
+            </section>
+
+            <section id="compaction" class="theory-section">
+              <p class="section-kicker"><span>04</span> COMPACTION</p>
+              <h2>Merge files and retire obsolete versions</h2>
+              <p>Compaction reads overlapping sorted files, merges their records, and writes new output files. The merge keeps the newest version for each key and can discard obsolete records or tombstones once it is safe to do so.</p>
+              <div class="theory-columns">
+                <div><h3>Leveled</h3><p>Files are organized into levels with size targets and limited overlap within deeper levels. This can reduce read amplification, at the cost of more rewriting during compaction.</p></div>
+                <div><h3>Size-tiered</h3><p>Similarly sized files are grouped and merged into a larger file. It often writes less eagerly, but can retain more overlapping files and increase read or space amplification.</p></div>
+              </div>
+              <p>The right strategy depends on workload shape, latency goals, available write bandwidth, and how much space can be used for temporary and obsolete files.</p>
+            </section>
+
+            <section id="tradeoffs" class="theory-section">
+              <p class="section-kicker"><span>05</span> TRADE-OFFS</p>
+              <h2>Pay for batching with amplification</h2>
+              <table class="theory-table">
+                <thead><tr><th>Measure</th><th>What it captures</th><th>Typical pressure</th></tr></thead>
+                <tbody>
+                  <tr><th scope="row">Write amplification</th><td>How many physical records are written for each logical update.</td><td>Compaction rewrites data.</td></tr>
+                  <tr><th scope="row">Read amplification</th><td>How many structures a read must check before finding an answer.</td><td>Many overlapping runs.</td></tr>
+                  <tr><th scope="row">Space amplification</th><td>How much retained physical data exists compared with live logical data.</td><td>Obsolete versions and tombstones.</td></tr>
+                </tbody>
+              </table>
+              <p>LSM systems tune these competing costs with level sizes, compaction policy, caching, filters, indexes, and flush thresholds. The simulator’s Run Statistics panel exposes educational record-count estimates for these same ideas.</p>
+            </section>
+
+            <section class="sources theory-section" aria-labelledby="sources-title">
+              <p class="section-kicker">REFERENCES</p>
+              <h2 id="sources-title">Sources</h2>
+              <ol>
+                <li><a href="https://www.cs.umb.edu/~poneil/lsmtree.pdf" target="_blank" rel="noreferrer">O’Neil et al., “The Log-Structured Merge-Tree (LSM-Tree),” Acta Informatica, 1996.</a></li>
+                <li><a href="https://research.google/pubs/bigtable-a-distributed-storage-system-for-structured-data/" target="_blank" rel="noreferrer">Chang et al., “Bigtable: A Distributed Storage System for Structured Data,” OSDI, 2006.</a></li>
+                <li><a href="https://github.com/facebook/rocksdb/wiki/Leveled-Compaction" target="_blank" rel="noreferrer">RocksDB Wiki, “Leveled Compaction.”</a></li>
+                <li><a href="https://github.com/facebook/rocksdb/wiki/Compaction" target="_blank" rel="noreferrer">RocksDB Wiki, “Compaction.”</a></li>
+              </ol>
+            </section>
+          </article>
+        </div>
+      </main>
+      <footer class="footer"><span>DBMS COURSE PROJECT</span><span><a href="./credits.html">CREDITS</a> · SIMULATED STORAGE · NO DATA LEAVES THIS PAGE</span></footer>
+    </div>
+  </body>
+</html>
