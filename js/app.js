@@ -1,5 +1,6 @@
 import { StepEngine } from "./step-engine.js";
 import { runSelfTests } from "./self-tests.js";
+import { createTutorial } from "./tutorial.js";
 
 const stepper = new StepEngine({ memtableCapacity: 4, seed: 2026 });
 const $ = (selector) => document.querySelector(selector);
@@ -436,3 +437,12 @@ elements.theme.addEventListener("click", () => {
 
 stepper.subscribe((current) => render(current));
 render();
+createTutorial({
+  execute: (action) => stepper.execute(action),
+  reset: () => {
+    batchSeed = 20261024;
+    inspectedTableId = null;
+    elements.queryResult.innerHTML = '<span class="result-label">QUERY RESULT</span><p>Read or scan to inspect resolved records.</p>';
+    stepper.reset();
+  },
+});
